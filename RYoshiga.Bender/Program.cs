@@ -82,14 +82,23 @@ public class Map
     {
         return Get(position.Line, position.Columns);
     }
+
+    public void DestroyWall(Point position)
+    {
+        _map[position.Line, position.Columns] = ' ';
+    }
 }
 
 public class Bender
 {
     private readonly Map _map;
     private Point _position;
-    private List<string> _answers = new List<string>();
-    private HashSet<Point> _hashSet = new HashSet<Point>();
+    private readonly List<string> _answers = new List<string>();
+    private readonly HashSet<Point> _hashSet = new HashSet<Point>();
+    private int _blockMove;
+    private bool _breakerMode;
+    private bool _circuit = true;
+
     public Bender(Map map)
     {
         _map = map;
@@ -103,43 +112,92 @@ public class Bender
 
     public IEnumerable<string> GetAnswer()
     {
-        int blockMove = 0;
+        _blockMove = 0;
         while (true)
         {
             var nextPosition = GetNextPosition();
             Console.Error.WriteLine("" + nextPosition.Line + ", " + nextPosition.Columns);
             var nextChar = _map.Get(nextPosition);
 
-            if (nextChar == 'X' || nextChar == '#')
+            if (nextChar == '#' || (nextChar == 'X' && !_breakerMode))
             {
-                if (CurrentDirection != Direction.West)
-                {
-                    CurrentDirection = (Direction)blockMove;
-                    blockMove++;
-                }
-                else
-                {
-                    break;
-                }
+                SetNewDirection();
 
                 continue;
             }
-            else if (nextChar == '$')
+
+            if (nextChar == '$')
             {
                 _answers.Add(CurrentDirection.ToString().ToUpper());
                 break;
             }
-            else
-            {
-                _hashSet.Add(nextPosition);
-                _answers.Add(CurrentDirection.ToString().ToUpper());
 
-                _position = nextPosition;
-            }
+            HandleWalkableSpot(nextPosition, nextChar);
 
-            blockMove = 0;
+            _blockMove = 0;
         }
         return _answers;
+    }
+
+    private void SetNewDirection()
+    {
+        if (_circuit)
+        {
+            if (CurrentDirection == Direction.West) 
+                return;
+
+            CurrentDirection = (Direction)_blockMove;
+            _blockMove++;
+
+            return;
+        }
+
+        if (CurrentDirection == Direction.East)
+            return;
+
+        CurrentDirection = (Direction) 3 - _blockMove;
+        _blockMove++;
+    }
+
+    private void HandleWalkableSpot(Point nextPosition, int nextChar)
+    {
+        _answers.Add(CurrentDirection.ToString().ToUpper());
+        _hashSet.Add(nextPosition);
+        _position = nextPosition;
+
+        CurrentDirection = nextChar switch
+        {
+            'S' => Direction.South,
+            'W' => Direction.West,
+            'E' => Direction.East,
+            'N' => Direction.North,
+            _ => CurrentDirection
+        };
+
+        if (nextChar == 'B')
+        {
+            this.DrinkBeer();
+        }
+
+        if (nextChar == 'I')
+        {
+            this.InvertCircuit();
+        }
+
+        if (nextChar == 'X')
+        {
+            _map.DestroyWall(nextPosition);
+        }
+    }
+
+    private void InvertCircuit()
+    {
+        _circuit = !_circuit;
+    }
+
+    private void DrinkBeer()
+    {
+        _breakerMode = !_breakerMode;
     }
 
     private Point GetNextPosition()
@@ -149,7 +207,7 @@ public class Bender
             Direction.South => new Point(_position.Line + 1, _position.Columns),
             Direction.East => new Point(_position.Line, _position.Columns + 1),
             Direction.North => new Point(_position.Line - 1, _position.Columns),
-            Direction.West => new Point(_position.Line, _position.Columns + 1),
+            Direction.West => new Point(_position.Line, _position.Columns - 1),
             Direction.None => new Point(_position.Line, _position.Columns + 1),
             _ => throw new ArgumentOutOfRangeException()
         };
