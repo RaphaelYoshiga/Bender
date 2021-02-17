@@ -26,9 +26,17 @@ class Solution
         }
 
         var bender = new Bender(map);
-        var answers = bender.GetAnswer();
-        foreach (var answer in answers)
-            Console.WriteLine(answer);
+        try
+        {
+            var answers = bender.GetAnswer();
+            foreach (var answer in answers)
+                Console.WriteLine(answer);
+        }
+        catch (LoopException e)
+        {
+            Console.WriteLine("LOOP");
+        }
+
     }
 }
 
@@ -37,6 +45,7 @@ public class Map
     private readonly char[,] _map;
     private readonly int _lines;
     private readonly int _columns;
+    private int _brokenWalls = 0;
 
     public Map(int lines, int columns)
     {
@@ -83,10 +92,27 @@ public class Map
         return Get(position.Line, position.Columns);
     }
 
-    public void DestroyWall(Point position)
+    public void BreakWall(Point position)
     {
         _map[position.Line, position.Columns] = ' ';
+        _brokenWalls++;
     }
+
+    public Point OtherPortal(Point position)
+    {
+        for (int line = 0; line < _lines; line++)
+        {
+            for (int column = 0; column < _columns; column++)
+            {
+                var character = Get(line, column);
+                if (character == 'T' && !position.Equals(new Point(line, column)))
+                    return new Point(line, column);
+            }
+        }
+        throw new InvalidOperationException("Can't find exit portal");
+    }
+
+    public int BrokenWalls => _brokenWalls;
 }
 
 public class Bender
@@ -94,7 +120,7 @@ public class Bender
     private readonly Map _map;
     private Point _position;
     private readonly List<string> _answers = new List<string>();
-    private readonly HashSet<Point> _hashSet = new HashSet<Point>();
+    private readonly HashSet<Step> _hashSet = new HashSet<Step>();
     private int _blockMove;
     private bool _breakerMode;
     private bool _circuit = true;
@@ -116,7 +142,6 @@ public class Bender
         while (true)
         {
             var nextPosition = GetNextPosition();
-            Console.Error.WriteLine("" + nextPosition.Line + ", " + nextPosition.Columns);
             var nextChar = _map.Get(nextPosition);
 
             if (nextChar == '#' || (nextChar == 'X' && !_breakerMode))
@@ -125,6 +150,8 @@ public class Bender
 
                 continue;
             }
+
+            Console.Error.WriteLine($"{nextPosition.Line}, {nextPosition.Columns} - Going: {CurrentDirection.ToString()}  breaker: {_breakerMode} circuit: {_circuit}");
 
             if (nextChar == '$')
             {
@@ -143,8 +170,10 @@ public class Bender
     {
         if (_circuit)
         {
-            if (CurrentDirection == Direction.West) 
-                return;
+            if (_blockMove >= 4)
+            {
+                throw new ArgumentOutOfRangeException();
+            }
 
             CurrentDirection = (Direction)_blockMove;
             _blockMove++;
@@ -152,17 +181,18 @@ public class Bender
             return;
         }
 
-        if (CurrentDirection == Direction.East)
-            return;
+        if (_blockMove >= 4)
+        {
+            throw new ArgumentOutOfRangeException();
+        }
 
-        CurrentDirection = (Direction) 3 - _blockMove;
+        CurrentDirection = (Direction)3 - _blockMove;
         _blockMove++;
     }
 
     private void HandleWalkableSpot(Point nextPosition, int nextChar)
     {
         _answers.Add(CurrentDirection.ToString().ToUpper());
-        _hashSet.Add(nextPosition);
         _position = nextPosition;
 
         CurrentDirection = nextChar switch
@@ -186,8 +216,24 @@ public class Bender
 
         if (nextChar == 'X')
         {
-            _map.DestroyWall(nextPosition);
+            _map.BreakWall(nextPosition);
         }
+
+        if (nextChar == 'T')
+        {
+            _position = _map.OtherPortal(_position);
+        }
+
+
+        var step = new Step(nextPosition, CurrentDirection, _circuit, _breakerMode, _map.BrokenWalls);
+        if (_hashSet.Contains(step))
+        {
+            Console.Error.WriteLine("Already have been here");
+            throw new LoopException();
+
+        }
+
+        _hashSet.Add(step);
     }
 
     private void InvertCircuit()
@@ -212,8 +258,29 @@ public class Bender
             _ => throw new ArgumentOutOfRangeException()
         };
     }
+}
 
+internal class LoopException : Exception
+{
+}
 
+internal struct Step
+{
+    public Point NextPosition { get; }
+    public Direction CurrentDirection { get; }
+    public bool Circuit { get; }
+    public bool BreakerMode { get; }
+    public int BrokenWalls { get; }
+
+    public Step(Point nextPosition, Direction currentDirection, in bool circuit, in bool breakerMode,
+        int brokenWalls)
+    {
+        NextPosition = nextPosition;
+        CurrentDirection = currentDirection;
+        Circuit = circuit;
+        BreakerMode = breakerMode;
+        BrokenWalls = brokenWalls;
+    }
 }
 
 public struct Point
